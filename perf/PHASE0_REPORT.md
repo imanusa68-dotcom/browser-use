@@ -197,3 +197,75 @@ O2–O7 remain drafted but **not applied** per the one-change-one-measurement ru
 
 - `fast_input` — **opt-in** (принят по A/B; включать в default после live-site smoke на масках/React).
 - Остальные флаги — выключены до своих изолированных A/B.
+
+---
+
+## P2 fast_scroll_stability — реализовано и измерено (итерация от 2026-08-27, продолжение)
+
+### Реализация
+Флаг: `BrowserProfile.fast_scroll_stability=False` (opt-in) или env `BROWSER_USE_FAST_SCROLL=1`.
+
+1. **Click-путь** (`_click_element_node_impl`): `scrollIntoViewIfNeeded + sleep(0.05)` →
+   `scrollIntoViewIfNeeded + _wait_element_rect_stable(ceiling=300ms)`; стабильный rect
+   переиспользуется как координаты клика (экономия одного лишнего CDP-замера).
+2. **Input-путь** (`_input_text_element_node_impl`): `sleep(0.01)` → тот же rect-stability wait,
+   rect переиспользуется как координаты фокуса.
+3. **Quiet-window вместо двух соседних кадров.** Важная находка при отладке на
+   `/shifting_button`: step-анимации (setInterval с шагом 25мс) мутируют layout реже, чем
+   каждый кадр, и два замера через один rAF могут ОБА попасть внутрь одного шага и ложно
+   показать «стабильно». Итоговый алгоритм: rect должен быть неизменным (<1px) в течение
+   **quiet-window 32мс** (~2 кадра), сэмплирование раз в rAF; потолок 300мс ⇒ последний замер
+   (де-факто старое поведение). Статичные страницы проходят за ~32мс (< легаси 50мс).
+4. **Corrective re-scroll.** Если после стабилизации элемент оказался ВНЕ вьюпорта
+   (поздний lazy-баннер вытолкнул его за границу) — один повторный
+   `scrollIntoViewIfNeeded + re-stabilize`. Легаси-путь в этом случае молча кликает
+   clamped-координаты → occlusion → деградация в JS element.click().
+
+### Регрессия /shifting_button (усилена: баннер растёт 0→150px шагами по 25мс, старт
+по первому scroll-событию ПОСЛЕ window.__armed=true — т.е. от скролла самого клика)
+
+| Арм | Попадание в кнопку | Координатный клик | Вердикт |
+|---|---|---|---|
+| legacy (sleep 0.05) | **НЕТ** (hit=False — клик по устаревшим координатам) | да, но мимо | воспроизводит баг |
+| fast (P2) | **ДА** (hit=True) | да (click_x в metadata) | чинит баг |
+
+Прямое доказательство требования ТЗ: «на медленных страницах поведение должно стать
+НАДЁЖНЕЕ, чем сейчас».
+
+### Полный regression-suite (`perf/regression_tests.py`, прямой dispatch событий, без LLM)
+
+| Тест | legacy | fast (FAST_INPUT+FAST_SCROLL) |
+|---|---|---|
+| shifting_button (P2) | mis-click (ожидаемо, помечен) | PASS, координатный клик |
+| masked_phone (откат P1) | PASS "(555) 123-4567" | PASS — fallback на per-char отработал |
+| react_input (framework events) | PASS state==dom | PASS |
+| slow_page (2s) | PASS | PASS |
+
+### A/B бенчмарк P2 (изолированно: только BROWSER_USE_FAST_SCROLL=1; 3 задачи × 3 прогона)
+
+| Метрика | p_baseline | p1_fast_input | p2_fast_scroll |
+|---|---|---|---|
+| SR | 9/9 = 100% | 9/9 = 100% | 9/9 = 100% |
+| T_task p50 | 10.11 s | 10.28 s | **9.70 s (−4.1%)** |
+| T_task mean | 9.65 s | 9.42 s | **9.16 s (−5.1%)** |
+| sleep ms/run | 28 197 | 27 483 | **26 875 (−1 322 vs baseline)** |
+
+Вердикт P2: **принято как opt-in** — SR non-inferior, wall-clock выигрыш, and надёжность
+на движущемся layout доказанно ВЫШЕ легаси (регрессия ловит реальный mis-click старого пути).
+
+### Сводная таблица «sleep → замена» (актуализация)
+
+| Sleep | Замена | Флаг | Статус |
+|---|---|---|---|
+| посимвольный ввод + 6мс/символ | Input.insertText + framework events + readback/fallback | fast_input | ✅ A/B принят |
+| sleep(0.05) перед readback | 1 rAF-тик (потолок 100мс) | fast_input | ✅ |
+| click: scrollIntoView + sleep(0.05) | rect-stability (quiet 32мс, потолок 300мс) + re-scroll при уходе из вьюпорта | fast_scroll_stability | ✅ A/B принят |
+| input: scrollIntoView + sleep(0.01) | тот же rect-stability, rect→координаты фокуса | fast_scroll_stability | ✅ |
+| P3 паузы клика (0.05/0.08) | move→0, press=click_press_duration_ms, release→0 | fast_click | 📋 флаг готов, код не воткнут |
+| P4 wait_between_actions | probe readyState+network+MutationObserver | fast_between_actions | 📋 |
+| P5 dom_watchdog sleep(0.3) | poll pending + quiet 100мс | fast_network_idle | 📋 |
+
+### Рекомендация по флагам (обновлена)
+- `fast_input`, `fast_scroll_stability` — **приняты, opt-in**; кандидаты в default после
+  live-site smoke (маски/React/smooth-scroll сайты).
+- `fast_click`, `fast_between_actions`, `fast_network_idle` — выключены до своих изолированных A/B.

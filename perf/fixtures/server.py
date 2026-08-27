@@ -185,9 +185,16 @@ class Handler(BaseHTTPRequestHandler):
 				)
 			)
 		elif path == '/shifting_button':
-			# Regression P2: a lazy banner inserts itself ABOVE the target button ~300ms
-			# after scroll starts, shifting the button down. A fixed 50ms post-scroll wait
-			# mis-clicks; rect-stability waiting must catch the shift.
+			# Regression P2: a lazy banner grows ABOVE the target button (0->150px over
+			# ~150ms) triggered by the FIRST scroll event AFTER window.__armed=true is set.
+			# Flow that reproduces the real-world race deterministically:
+			#   1. test scrolls so the button is only partially visible (enters selector_map);
+			#   2. test sets window.__armed=true and dispatches the click;
+			#   3. the click path's scrollIntoViewIfNeeded fires a scroll event -> banner
+			#      starts growing -> layout keeps moving while the legacy fixed sleep(0.05)
+			#      measures coordinates -> stale point (mis-click or occlusion/JS fallback).
+			# P2 rect-stability waiting keeps re-measuring per rAF until the banner stops
+			# and performs a true coordinate click on the final position.
 			filler = ''.join(f'<p>filler line {i}</p>' for i in range(80))
 			self._send(
 				page(
@@ -197,13 +204,16 @@ class Handler(BaseHTTPRequestHandler):
 					'<button id="target" onclick="document.getElementById(\'clickres\').textContent=\'TARGET-HIT\'">Confirm order</button>'
 					'<div id="clickres"></div>'
 					'<script>'
-					'var injected=false;'
+					'window.__armed=false;var injected=false;'
 					"window.addEventListener('scroll',function(){"
-					'if(injected)return;injected=true;'
-					'setTimeout(function(){'
-					"var b=document.createElement('div');b.style.height='120px';b.style.background='#fc0';"
-					"b.textContent='LAZY BANNER LOADED';document.getElementById('bannerslot').appendChild(b);"
-					'},300);});'
+					'if(!window.__armed||injected)return;injected=true;'
+					"var b=document.createElement('div');b.id='lazybanner';b.style.height='0px';"
+					"b.style.overflow='hidden';b.style.background='#fc0';b.textContent='LAZY BANNER LOADED';"
+					"document.getElementById('bannerslot').appendChild(b);"
+					'var h=0;var t=setInterval(function(){h+=25;'
+					"b.style.height=h+'px';"
+					'if(h>=150)clearInterval(t);},25);'
+					'});'
 					'</script>',
 				)
 			)

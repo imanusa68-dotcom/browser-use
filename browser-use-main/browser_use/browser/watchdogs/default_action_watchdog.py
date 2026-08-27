@@ -83,30 +83,45 @@ class DefaultActionWatchdog(BaseWatchdog):
 			await asyncio.sleep(min(timeout_ms, 50) / 1000)
 
 	async def _wait_element_rect_stable(
-		self, backend_node_id: int, cdp_session, ceiling_ms: int = 300
+		self, backend_node_id: int, cdp_session, ceiling_ms: int = 300, quiet_ms: int = 32
 	) -> 'object | None':
-		"""P2: wait until the element's bounding rect is identical (<1px delta) across two
-		rAF-separated measurements, i.e. any smooth-scroll / layout shift has finished.
+		"""P2: wait until the element's bounding rect has been UNCHANGED (<1px delta) for a
+		quiet window of `quiet_ms` (~2 animation frames), sampling once per rAF tick.
+
+		Why a quiet window and not just two consecutive-frame samples: step animations
+		(setInterval-driven banner growth, lazy-ad insertion) mutate layout every N>16ms,
+		so two samples one frame apart can BOTH land inside a single step and falsely look
+		stable (verified by the /shifting_button regression fixture). A 32ms quiet window
+		spans two frames and catches any animation stepping at <=32ms; smooth-scroll and
+		rAF-driven animations mutate every frame and are caught immediately.
 
 		Returns the last measured rect (same type as browser_session.get_element_coordinates)
 		or None if coordinates could not be obtained.
 
-		This is strictly MORE reliable than the old fixed sleep(0.05): on slow smooth-scroll
-		pages it keeps waiting (up to ceiling_ms), on fast pages it returns in ~1 frame (8-16ms).
-		On ceiling hit we use the last measurement — exactly the de-facto behavior of the old code.
+		Reliability vs legacy sleep(0.05): static pages return in ~quiet_ms (32ms < 50ms);
+		still-moving layouts keep the wait going up to ceiling_ms (300ms), where legacy would
+		have clicked stale coordinates at 50ms. On ceiling hit we use the last measurement —
+		exactly the de-facto behavior of the old code.
 		"""
-		deadline = asyncio.get_event_loop().time() + ceiling_ms / 1000
+		loop = asyncio.get_event_loop()
+		deadline = loop.time() + ceiling_ms / 1000
 		prev = None
+		stable_since: float | None = None
 		while True:
 			try:
 				rect = await self.browser_session.get_element_coordinates(backend_node_id, cdp_session)
 			except Exception:
 				rect = None
-			if rect is not None and prev is not None:
-				if abs(rect.x - prev.x) < 1 and abs(rect.y - prev.y) < 1:
-					return rect  # stable across one frame -> safe to interact
+			now = loop.time()
+			if rect is not None and prev is not None and abs(rect.x - prev.x) < 1 and abs(rect.y - prev.y) < 1:
+				if stable_since is None:
+					stable_since = now
+				elif (now - stable_since) * 1000 >= quiet_ms:
+					return rect  # rect quiet for >= quiet_ms -> safe to interact
+			else:
+				stable_since = None  # moved (or first sample) -> restart the quiet window
 			prev = rect
-			if asyncio.get_event_loop().time() >= deadline:
+			if now >= deadline:
 				self.logger.debug('perf.fallback: rect not stable within ceiling, using last measurement (P2)')
 				return rect
 			await self._raf_tick(cdp_session, timeout_ms=50)
@@ -866,17 +881,44 @@ class DefaultActionWatchdog(BaseWatchdog):
 			viewport_height = layout_metrics['layoutViewport']['clientHeight']
 
 			# Scroll element into view FIRST before getting coordinates
+			# P2 (fast_scroll_stability): instead of a blind sleep(0.05) — which can be BOTH
+			# too long (instant scroll finished in 1 frame) AND too short (smooth-scroll or a
+			# late lazy-banner shifting layout takes >50ms) — wait until the element's rect is
+			# identical across two rAF-separated measurements (<1px delta), ceiling 300ms.
+			# The stable rect doubles as the click coordinates, saving one extra CDP roundtrip.
+			_p2_fast_scroll = self._perf_flag('fast_scroll_stability', 'BROWSER_USE_FAST_SCROLL')
+			element_rect = None
 			try:
 				await cdp_session.cdp_client.send.DOM.scrollIntoViewIfNeeded(
 					params={'backendNodeId': backend_node_id}, session_id=session_id
 				)
-				await asyncio.sleep(0.05)  # Wait for scroll to complete
+				if _p2_fast_scroll:
+					element_rect = await self._wait_element_rect_stable(backend_node_id, cdp_session, ceiling_ms=300)
+					# Late layout shift (lazy banner/ad) may have pushed the now-stable element
+					# back OUT of the viewport — a case the legacy fixed sleep silently
+					# mis-handles (clamped coords -> occlusion -> JS-click fallback).
+					# One corrective re-scroll + re-stabilize keeps the true coordinate click.
+					if element_rect is not None and (
+						element_rect.y + element_rect.height <= 0
+						or element_rect.y >= viewport_height
+						or element_rect.x + element_rect.width <= 0
+						or element_rect.x >= viewport_width
+					):
+						self.logger.debug('P2: element shifted out of viewport after stability wait, re-scrolling once')
+						await cdp_session.cdp_client.send.DOM.scrollIntoViewIfNeeded(
+							params={'backendNodeId': backend_node_id}, session_id=session_id
+						)
+						element_rect = await self._wait_element_rect_stable(backend_node_id, cdp_session, ceiling_ms=300)
+				else:
+					await asyncio.sleep(0.05)  # Wait for scroll to complete (legacy fixed pause)
 				self.logger.debug('Scrolled element into view before getting coordinates')
 			except Exception as e:
 				self.logger.debug(f'Failed to scroll element into view: {e}')
 
 			# Get element coordinates using the unified method AFTER scrolling
-			element_rect = await self.browser_session.get_element_coordinates(backend_node_id, cdp_session)
+			# (fast path already has the stability-verified rect; measure only if missing)
+			if element_rect is None:
+				element_rect = await self.browser_session.get_element_coordinates(backend_node_id, cdp_session)
 
 			# Convert rect to quads format if we got coordinates
 			quads = []
@@ -1881,11 +1923,20 @@ class DefaultActionWatchdog(BaseWatchdog):
 			input_coordinates = None
 
 			# Scroll element into view
+			# P2 (fast_scroll_stability): replace the blind sleep(0.01) with a rect-stability
+			# wait (two identical rAF-separated measurements, ceiling 300ms). The stable rect
+			# is reused below as the focus coordinates. More reliable than 10ms on smooth-scroll
+			# or when a lazy element above shifts layout mid-scroll.
+			_p2_fast_scroll = self._perf_flag('fast_scroll_stability', 'BROWSER_USE_FAST_SCROLL')
+			_p2_stable_rect = None
 			try:
 				await cdp_session.cdp_client.send.DOM.scrollIntoViewIfNeeded(
 					params={'backendNodeId': backend_node_id}, session_id=cdp_session.session_id
 				)
-				await asyncio.sleep(0.01)
+				if _p2_fast_scroll:
+					_p2_stable_rect = await self._wait_element_rect_stable(backend_node_id, cdp_session, ceiling_ms=300)
+				else:
+					await asyncio.sleep(0.01)
 			except Exception as e:
 				# Node detached errors are common with shadow DOM and dynamic content
 				# The element can still be interacted with even if scrolling fails
@@ -1907,8 +1958,10 @@ class DefaultActionWatchdog(BaseWatchdog):
 			)
 			object_id = result['object']['objectId']
 
-			# Get current coordinates using unified method
-			coords = await self.browser_session.get_element_coordinates(backend_node_id, cdp_session)
+			# Get current coordinates using unified method (reuse the P2 stability-verified rect if present)
+			coords = _p2_stable_rect
+			if coords is None:
+				coords = await self.browser_session.get_element_coordinates(backend_node_id, cdp_session)
 			if coords:
 				center_x = coords.x + coords.width / 2
 				center_y = coords.y + coords.height / 2
