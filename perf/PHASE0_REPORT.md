@@ -385,3 +385,43 @@ A/B-бенчи НЕ выполнены — до их прохождения фл
 - ✅ приняты (A/B, opt-in): `fast_input` (P1), `fast_scroll_stability` (P2), `fast_click` (P3), `fast_between_actions` (P4)
 - 🟡 код готов + regression PASS, A/B pending: `fast_network_idle` (P5)
 - ⏳ не начато: P6 sleep-аудит, метрики fallback_rate/mis-click в run_bench, сводный «всё включено» A/B
+
+---
+
+## Итерация P5 — A/B выполнен, ПРИНЯТ (2026-08-27, финальная сессия)
+
+### A/B бенчмарк P5 (изолированно: только BROWSER_USE_FAST_NETWORK_IDLE=1; 6 задач × 3 прогона = 18/арм)
+
+| Метрика | p5_baseline | p5_fast_network_idle |
+|---|---|---|
+| SR | 18/18 = 100% (Wilson CI [0.82, 1.0]) | 18/18 = 100% (Wilson CI [0.82, 1.0]) |
+| T_task p50 | 10.27 s | 10.59 s (+0.32 s — в пределах межпрогонного шума: p50 baseline-армов между сессиями колебался 10.27–10.84 s) |
+| T_task mean | 10.73 s | **10.66 s (−0.07 s)** |
+| sleep ms/run | 31 487 | **31 247 (−240)** |
+
+### Целевые прогоны (perf/p5_targeted.py, оба арма)
+
+| Сценарий | legacy | fast | Вывод |
+|---|---|---|---|
+| /search (быстрая статика), state build p50 | 72 мс | 41 мс | (а) fast не ждёт лишнего |
+| /slow (2с задержка сервера), маркер после каждого build | 71 мс, ZEBRA-9 present 3/3 | 78 мс, present 3/3 | (б) fast не уходит раньше готовности |
+| /delayed_field, поле после рендера | present | present | (б) корректность сохранена |
+| state build при коротком in-flight fetch | 85 мс | **35 мс** | (а) quiet-window выходит раньше слепых 0.3с |
+
+Примечание: на реальных страницах фикстур ветка `pending_requests_before_wait` срабатывает редко —
+`performance.getEntriesByType('resource')` в headless Chromium не всегда репортит fetch до его
+завершения (проверено прямым probe: inflight=[] при живом 2с-fetch). Поэтому выигрыш на локальном
+бенче мал; логика проверена прямым unit-тестом хелпера.
+
+### Прямой тест потолка/quiet-window/фильтра (perf/p5_ceiling_test.py, monkeypatch pending-хелпера)
+
+| Кейс | Ожидание | Результат |
+|---|---|---|
+| (1) вечно-pending запрос | потолок 0.5с + лог `perf.fallback: network_idle_ceiling` | wall=502 мс, ceiling_logged=True ✅ |
+| (2) запрос исчезает через 150 мс | выход по quiet-window ~250–350 мс (< потолка) | wall=254 мс, ceiling не сработал ✅ |
+| (3) pending только websocket | отфильтрован `_is_long_lived_request`, выход ~100 мс | wall=101 мс ✅ (websocket НЕ держит ожидание) |
+
+Вердикт P5: **принято как opt-in** — SR non-inferior (0 п.п.), mean не хуже, поведение на
+быстрых/медленных страницах корректно ((а)(б)(в) подтверждены), потолок и фильтр долгоживущих
+соединений работают и логируются. Выигрыш проявляется на сайтах с реальными pending-запросами
+перед снапшотом (короткий fetch: 85→35 мс на state build); на «чистых» страницах — нейтрально.
