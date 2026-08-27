@@ -269,3 +269,42 @@ O2–O7 remain drafted but **not applied** per the one-change-one-measurement ru
 - `fast_input`, `fast_scroll_stability` — **приняты, opt-in**; кандидаты в default после
   live-site smoke (маски/React/smooth-scroll сайты).
 - `fast_click`, `fast_between_actions`, `fast_network_idle` — выключены до своих изолированных A/B.
+
+---
+
+## Итерация P3 — паузы клика (2026-08-27)
+
+**P3 fast_click — реализовано и измерено (изолированное изменение).**
+- Флаг: `BrowserProfile.fast_click=False` (opt-in) или env `BROWSER_USE_FAST_CLICK=1`.
+- Где: `default_action_watchdog.py` — `_click_element_node_impl` (координатный клик) и `_click_on_coordinate`.
+- Легаси: `mouseMoved` + sleep(0.05) → `mousePressed` + sleep(0.08 / 0.05) → `mouseReleased` (~130/100 мс чистого sleep на клик).
+- Fast: пауза после `mouseMoved` = 0 (порядок событий гарантирует ack CDP); press hold = `profile.click_press_duration_ms` (default 20 мс — не ноль, т.к. часть сайтов меряет длительность нажатия / вешает UI на mousedown); пауза после `mouseReleased` = 0.
+- Порядок/полнота событий (moved→pressed→released, button/clickCount) не менялись; JS-click-fallback (`element.click()` при исключении CDP-клика и при незатогленном checkbox) не тронут.
+- Fallback: путь не ждёт условий; при исключении dispatchMouseEvent срабатывает существующий JS-fallback (как в легаси).
+
+### Regression (оба арма)
+
+| Тест | legacy | BROWSER_USE_FAST_CLICK=1 |
+|---|---|---|
+| shifting_button | PASS (legacy-семантика) | PASS — coordinate_click=True; mis-click «устаревших координат» остаётся свойством ЛЕГАСИ-скролла, fast_click его не усугубил (клик стал короче, но координаты берутся в тот же момент, что и раньше) |
+| shifting_button + FAST_SCROLL=1 | — | PASS hit=True coordinate_click=True — P2+P3 вместе попадают в финальную позицию |
+| masked_phone | PASS | PASS |
+| react_input | PASS | PASS |
+| slow_page | PASS | PASS |
+
+Отдельно задокументировано: `fast_click` при выключенном P2 ведёт себя как легаси-арм по отношению
+к shifting-layout (клик по координатам, снятым до сдвига) — укорочение пауз внутри mouse-последовательности
+НЕ меняет момент снятия координат, поэтому баг устаревших координат не «возвращён», он просто остаётся
+багом легаси-скролла, который чинит P2. Комбинация P2+P3 попадает в цель (прогон подтверждён).
+
+### A/B бенчмарк P3 (изолированно: только BROWSER_USE_FAST_CLICK=1; 6 задач × 3 прогона = 18/арм)
+
+| Метрика | p3_baseline | p3_fast_click |
+|---|---|---|
+| SR | 18/18 = 100% (Wilson CI [0.82, 1.0]) | 18/18 = 100% (Wilson CI [0.82, 1.0]) |
+| T_task p50 | 10.75 s | **10.61 s (−1.3%)** |
+| T_task mean | 10.84 s | **10.71 s (−1.2%)** |
+| sleep ms/run | 31 893 | **31 313 (−580)** |
+
+Вердикт P3: **принято как opt-in** — SR non-inferior (0 п.п. разницы), выигрыш ~130 мс на клик
+(~580 мс/прогон при 4–5 кликах), поведение при выключенном флаге бит-в-бит легаси.

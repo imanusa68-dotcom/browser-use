@@ -1046,6 +1046,24 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Perform the click using CDP (element is not occluded)
 			try:
+				# P3 (fast_click): the legacy click path spends ~130ms in pure sleeps
+				# (50ms after mouseMoved + 80ms press hold). These pauses do NOT wait for
+				# any condition — CDP Input.dispatchMouseEvent is acknowledged only after
+				# the browser has processed the event, so the ordering guarantee
+				# (moved -> pressed -> released) is provided by the protocol itself.
+				# With the flag: 0ms after mouseMoved, press hold = click_press_duration_ms
+				# (default 20ms — kept non-zero for sites measuring press duration /
+				# mousedown-driven UI), 0ms after mouseReleased. Event sequence, button,
+				# clickCount and the JS-click fallback are untouched.
+				_p3_fast_click = self._perf_flag('fast_click', 'BROWSER_USE_FAST_CLICK')
+				if _p3_fast_click:
+					try:
+						_press_hold_s = max(0, int(getattr(self.browser_session.browser_profile, 'click_press_duration_ms', 20))) / 1000
+					except Exception:
+						_press_hold_s = 0.02
+				else:
+					_press_hold_s = 0.08  # legacy press hold
+
 				self.logger.debug(f'👆 Dragging mouse over element before clicking x: {center_x}px y: {center_y}px ...')
 				# Move mouse to element
 				await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
@@ -1056,7 +1074,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 					},
 					session_id=session_id,
 				)
-				await asyncio.sleep(0.05)
+				if not _p3_fast_click:
+					await asyncio.sleep(0.05)  # legacy fixed pause after mouseMoved (no condition behind it)
 
 				# Mouse down
 				self.logger.debug(f'👆🏾 Clicking x: {center_x}px y: {center_y}px ...')
@@ -1074,7 +1093,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 						),
 						timeout=3.0,  # 3 second timeout for mousePressed
 					)
-					await asyncio.sleep(0.08)
+					if _press_hold_s > 0:
+						await asyncio.sleep(_press_hold_s)  # press hold: 80ms legacy / click_press_duration_ms with fast_click
 				except TimeoutError:
 					self.logger.debug('⏱️ Mouse down timed out (likely due to dialog), continuing...')
 					# Don't sleep if we timed out
@@ -1224,6 +1244,17 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			self.logger.debug(f'👆 Moving mouse to ({coordinate_x}, {coordinate_y})...')
 
+			# P3 (fast_click): same pause policy as the element click path — see
+			# _click_element_node_impl. Event ordering is guaranteed by CDP acks.
+			_p3_fast_click = self._perf_flag('fast_click', 'BROWSER_USE_FAST_CLICK')
+			if _p3_fast_click:
+				try:
+					_press_hold_s = max(0, int(getattr(self.browser_session.browser_profile, 'click_press_duration_ms', 20))) / 1000
+				except Exception:
+					_press_hold_s = 0.02
+			else:
+				_press_hold_s = 0.05  # legacy press hold in this path
+
 			# Move mouse to coordinates
 			await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
 				params={
@@ -1233,7 +1264,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 				},
 				session_id=session_id,
 			)
-			await asyncio.sleep(0.05)
+			if not _p3_fast_click:
+				await asyncio.sleep(0.05)  # legacy fixed pause after mouseMoved (no condition behind it)
 
 			# Mouse down
 			self.logger.debug(f'👆🏾 Clicking at ({coordinate_x}, {coordinate_y})...')
@@ -1251,7 +1283,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 					),
 					timeout=3.0,
 				)
-				await asyncio.sleep(0.05)
+				if _press_hold_s > 0:
+					await asyncio.sleep(_press_hold_s)  # press hold: 50ms legacy / click_press_duration_ms with fast_click
 			except TimeoutError:
 				self.logger.debug('⏱️ Mouse down timed out (likely due to dialog), continuing...')
 
