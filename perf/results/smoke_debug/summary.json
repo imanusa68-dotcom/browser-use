@@ -1,0 +1,110 @@
+{
+  "label": "smoke_debug",
+  "profile": "baseline",
+  "n_runs": 1,
+  "success_rate": 0.0,
+  "sr_wilson_ci": [
+    0,
+    0.793
+  ],
+  "t_task_p50": 11.93,
+  "t_task_mean": 11.93,
+  "n_steps_mean": 7,
+  "results": [
+    {
+      "task": "search_extract",
+      "run": 0,
+      "success": false,
+      "error": null,
+      "t_task_s": 11.93,
+      "n_steps": 7,
+      "final_text": "",
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "cost": 0.0,
+      "invocations": 0
+    }
+  ],
+  "span_aggregate": {
+    "agent.step": {
+      "n": 6,
+      "p50_ms": 445.0,
+      "p95_ms": 932.1,
+      "total_ms": 3170.8
+    },
+    "browser.screenshot": {
+      "n": 6,
+      "p50_ms": 144.2,
+      "p95_ms": 159.3,
+      "total_ms": 837.8
+    },
+    "browser.state_request": {
+      "n": 7,
+      "p50_ms": 153.3,
+      "p95_ms": 167.2,
+      "total_ms": 924.6
+    },
+    "cdp.cmd": {
+      "n": 168,
+      "p50_ms": 2.7,
+      "p95_ms": 87.5,
+      "total_ms": 2221.0
+    },
+    "dom.cdp_ax_tree": {
+      "n": 7,
+      "p50_ms": 9.6,
+      "p95_ms": 21.4,
+      "total_ms": 84.4
+    },
+    "dom.cdp_get_all_trees": {
+      "n": 7,
+      "p50_ms": 23.9,
+      "p95_ms": 33.8,
+      "total_ms": 175.7
+    },
+    "dom.get_dom_tree": {
+      "n": 7,
+      "p50_ms": 25.9,
+      "p95_ms": 36.0,
+      "total_ms": 190.8
+    },
+    "dom.get_serialized_dom_tree": {
+      "n": 7,
+      "p50_ms": 26.7,
+      "p95_ms": 37.4,
+      "total_ms": 197.4
+    },
+    "idle.sleep": {
+      "n": 130,
+      "p50_ms": 57.5,
+      "p95_ms": 195.7,
+      "total_ms": 30138.8
+    },
+    "phase.get_next_action": {
+      "n": 6,
+      "p50_ms": 198.2,
+      "p95_ms": 740.0,
+      "total_ms": 1764.2
+    },
+    "phase.llm_call": {
+      "n": 6,
+      "p50_ms": 198.1,
+      "p95_ms": 739.5,
+      "total_ms": 1763.1
+    },
+    "phase.multi_act": {
+      "n": 1,
+      "p50_ms": 667.0,
+      "p95_ms": 667.0,
+      "total_ms": 667.0
+    },
+    "phase.prepare_context": {
+      "n": 6,
+      "p50_ms": 239.6,
+      "p95_ms": 259.3,
+      "total_ms": 1389.2
+    },
+    "_cdp_cmds_per_run": 168,
+    "_sleep_ms_per_run": 30138.9
+  }
+}

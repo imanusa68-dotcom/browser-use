@@ -1,0 +1,337 @@
+{
+  "label": "baseline",
+  "profile": "baseline",
+  "n_runs": 18,
+  "success_rate": 1.0,
+  "sr_wilson_ci": [
+    0.824,
+    1
+  ],
+  "t_task_p50": 10.77,
+  "t_task_mean": 10.65,
+  "n_steps_mean": 3,
+  "results": [
+    {
+      "task": "search_extract",
+      "run": 0,
+      "success": true,
+      "error": null,
+      "t_task_s": 10.89,
+      "n_steps": 3,
+      "final_text": "20 results found for Tools.",
+      "prompt_tokens": 12632,
+      "completion_tokens": 101,
+      "cost": 0.0,
+      "invocations": 2
+    },
+    {
+      "task": "search_extract",
+      "run": 1,
+      "success": true,
+      "error": null,
+      "t_task_s": 10.81,
+      "n_steps": 3,
+      "final_text": "20 results found for Tools.",
+      "prompt_tokens": 12632,
+      "completion_tokens": 101,
+      "cost": 0.0,
+      "invocations": 2
+    },
+    {
+      "task": "search_extract",
+      "run": 2,
+      "success": true,
+      "error": null,
+      "t_task_s": 10.1,
+      "n_steps": 3,
+      "final_text": "20 results found for Tools.",
+      "prompt_tokens": 12632,
+      "completion_tokens": 101,
+      "cost": 0.0,
+      "invocations": 2
+    },
+    {
+      "task": "form_fill",
+      "run": 0,
+      "success": true,
+      "error": null,
+      "t_task_s": 11.49,
+      "n_steps": 3,
+      "final_text": "Confirmation: Alice Smith (alice@example.com) from Germany",
+      "prompt_tokens": 12647,
+      "completion_tokens": 158,
+      "cost": 0.0,
+      "invocations": 2
+    },
+    {
+      "task": "form_fill",
+      "run": 1,
+      "success": true,
+      "error": null,
+      "t_task_s": 11.56,
+      "n_steps": 3,
+      "final_text": "Confirmation: Alice Smith (alice@example.com) from Germany",
+      "prompt_tokens": 12647,
+      "completion_tokens": 158,
+      "cost": 0.0,
+      "invocations": 2
+    },
+    {
+      "task": "form_fill",
+      "run": 2,
+      "success": true,
+      "error": null,
+      "t_task_s": 11.45,
+      "n_steps": 3,
+      "final_text": "Confirmation: Alice Smith (alice@example.com) from Germany",
+      "prompt_tokens": 12647,
+      "completion_tokens": 158,
+      "cost": 0.0,
+      "invocations": 2
+    },
+    {
+      "task": "table_paginate",
+      "run": 0,
+      "success": true,
+      "error": null,
+      "t_task_s": 13.76,
+      "n_steps": 4,
+      "final_text": "Product 25 costs $85.",
+      "prompt_tokens": 19549,
+      "completion_tokens": 119,
+      "cost": 0.0,
+      "invocations": 3
+    },
+    {
+      "task": "table_paginate",
+      "run": 1,
+      "success": true,
+      "error": null,
+      "t_task_s": 13.81,
+      "n_steps": 4,
+      "final_text": "Product 25 costs $85.",
+      "prompt_tokens": 19549,
+      "completion_tokens": 119,
+      "cost": 0.0,
+      "invocations": 3
+    },
+    {
+      "task": "table_paginate",
+      "run": 2,
+      "success": true,
+      "error": null,
+      "t_task_s": 13.75,
+      "n_steps": 4,
+      "final_text": "Product 25 costs $85.",
+      "prompt_tokens": 19549,
+      "completion_tokens": 119,
+      "cost": 0.0,
+      "invocations": 3
+    },
+    {
+      "task": "login_flow",
+      "run": 0,
+      "success": true,
+      "error": null,
+      "t_task_s": 10.52,
+      "n_steps": 3,
+      "final_text": "Account balance is $4521.77.",
+      "prompt_tokens": 12560,
+      "completion_tokens": 117,
+      "cost": 0.0,
+      "invocations": 2
+    },
+    {
+      "task": "login_flow",
+      "run": 1,
+      "success": true,
+      "error": null,
+      "t_task_s": 10.72,
+      "n_steps": 3,
+      "final_text": "Account balance is $4521.77.",
+      "prompt_tokens": 12560,
+      "completion_tokens": 117,
+      "cost": 0.0,
+      "invocations": 2
+    },
+    {
+      "task": "login_flow",
+      "run": 2,
+      "success": true,
+      "error": null,
+      "t_task_s": 11.31,
+      "n_steps": 3,
+      "final_text": "Account balance is $4521.77.",
+      "prompt_tokens": 12560,
+      "completion_tokens": 117,
+      "cost": 0.0,
+      "invocations": 2
+    },
+    {
+      "task": "modal_dismiss",
+      "run": 0,
+      "success": true,
+      "error": null,
+      "t_task_s": 9.61,
+      "n_steps": 3,
+      "final_text": "The launch code is FALCON-42.",
+      "prompt_tokens": 12503,
+      "completion_tokens": 92,
+      "cost": 0.0,
+      "invocations": 2
+    },
+    {
+      "task": "modal_dismiss",
+      "run": 1,
+      "success": true,
+      "error": null,
+      "t_task_s": 10.17,
+      "n_steps": 3,
+      "final_text": "The launch code is FALCON-42.",
+      "prompt_tokens": 12503,
+      "completion_tokens": 92,
+      "cost": 0.0,
+      "invocations": 2
+    },
+    {
+      "task": "modal_dismiss",
+      "run": 2,
+      "success": true,
+      "error": null,
+      "t_task_s": 10.18,
+      "n_steps": 3,
+      "final_text": "The launch code is FALCON-42.",
+      "prompt_tokens": 12503,
+      "completion_tokens": 92,
+      "cost": 0.0,
+      "invocations": 2
+    },
+    {
+      "task": "heavy_dom",
+      "run": 0,
+      "success": true,
+      "error": null,
+      "t_task_s": 7.33,
+      "n_steps": 2,
+      "final_text": "The magic number is 7319.",
+      "prompt_tokens": 6854,
+      "completion_tokens": 52,
+      "cost": 0.0,
+      "invocations": 1
+    },
+    {
+      "task": "heavy_dom",
+      "run": 1,
+      "success": true,
+      "error": null,
+      "t_task_s": 7.15,
+      "n_steps": 2,
+      "final_text": "The magic number is 7319.",
+      "prompt_tokens": 6853,
+      "completion_tokens": 52,
+      "cost": 0.0,
+      "invocations": 1
+    },
+    {
+      "task": "heavy_dom",
+      "run": 2,
+      "success": true,
+      "error": null,
+      "t_task_s": 7.07,
+      "n_steps": 2,
+      "final_text": "The magic number is 7319.",
+      "prompt_tokens": 6853,
+      "completion_tokens": 52,
+      "cost": 0.0,
+      "invocations": 1
+    }
+  ],
+  "span_aggregate": {
+    "agent.step": {
+      "n": 36,
+      "p50_ms": 3809.3,
+      "p95_ms": 5530.2,
+      "total_ms": 140990.7
+    },
+    "browser.screenshot": {
+      "n": 36,
+      "p50_ms": 147.5,
+      "p95_ms": 520.8,
+      "total_ms": 6347.9
+    },
+    "browser.state_request": {
+      "n": 54,
+      "p50_ms": 164.9,
+      "p95_ms": 650.6,
+      "total_ms": 11817.0
+    },
+    "cdp.cmd": {
+      "n": 2359,
+      "p50_ms": 3.3,
+      "p95_ms": 91.8,
+      "total_ms": 46443.2
+    },
+    "dom.cdp_ax_tree": {
+      "n": 54,
+      "p50_ms": 13.1,
+      "p95_ms": 374.1,
+      "total_ms": 3433.0
+    },
+    "dom.cdp_get_all_trees": {
+      "n": 54,
+      "p50_ms": 30.3,
+      "p95_ms": 382.9,
+      "total_ms": 4340.9
+    },
+    "dom.get_dom_tree": {
+      "n": 54,
+      "p50_ms": 32.3,
+      "p95_ms": 551.4,
+      "total_ms": 5290.1
+    },
+    "dom.get_serialized_dom_tree": {
+      "n": 54,
+      "p50_ms": 33.4,
+      "p95_ms": 575.9,
+      "total_ms": 5527.1
+    },
+    "idle.sleep": {
+      "n": 1535,
+      "p50_ms": 15.3,
+      "p95_ms": 1928.3,
+      "total_ms": 560603.1
+    },
+    "phase.execute_actions": {
+      "n": 36,
+      "p50_ms": 836.1,
+      "p95_ms": 1923.8,
+      "total_ms": 23114.3
+    },
+    "phase.get_next_action": {
+      "n": 36,
+      "p50_ms": 2959.8,
+      "p95_ms": 3300.3,
+      "total_ms": 106885.9
+    },
+    "phase.llm_call": {
+      "n": 36,
+      "p50_ms": 2959.5,
+      "p95_ms": 3300.2,
+      "total_ms": 106874.5
+    },
+    "phase.multi_act": {
+      "n": 54,
+      "p50_ms": 277.2,
+      "p95_ms": 1727.7,
+      "total_ms": 31280.2
+    },
+    "phase.prepare_context": {
+      "n": 36,
+      "p50_ms": 252.1,
+      "p95_ms": 642.8,
+      "total_ms": 10741.8
+    },
+    "_cdp_cmds_per_run": 131.1,
+    "_sleep_ms_per_run": 31144.6
+  }
+}
