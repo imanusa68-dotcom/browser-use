@@ -362,3 +362,26 @@ A/B-бенчи НЕ выполнены — до их прохождения фл
 3. P6 sleep-аудит (таблица вердиктов по каждому asyncio.sleep в default_action_watchdog).
 4. Метрики fallback_rate и mis-click rate в run_bench.py.
 5. Сводный «всё включено» A/B (5 флагов одновременно) — проверка интерференции.
+
+---
+
+## Итерация P4 — A/B выполнен, ПРИНЯТ (2026-08-27, дополнение)
+
+### A/B бенчмарк P4 (изолированно: только BROWSER_USE_FAST_BETWEEN_ACTIONS=1; 6 задач × 3 прогона = 18/арм)
+
+| Метрика | baseline (p3_baseline, все флаги OFF) | p4_fast_between |
+|---|---|---|
+| SR | 18/18 = 100% (Wilson CI [0.82, 1.0]) | 18/18 = 100% (Wilson CI [0.82, 1.0]) |
+| T_task p50 | 10.75 s | **10.26 s (−4.6%)** |
+| T_task mean | 10.84 s | **10.50 s (−3.1%)** |
+| sleep ms/run | 31 893 | **30 757 (−1 136)** |
+
+Вердикт P4: **принято как opt-in** — SR non-inferior (0 п.п.), выигрыш ~75–100 мс на каждое
+действие после первого в батче, потолок ×5 и probe-error fallback гарантируют «не хуже легаси».
+(Baseline-арм переиспользован из P3-итерации: тот же коммит рантайма для легаси-путей, все флаги OFF,
+та же среда/mock-LLM — код P4 не трогает легаси-ветку.)
+
+### Статус флагов на конец сессии
+- ✅ приняты (A/B, opt-in): `fast_input` (P1), `fast_scroll_stability` (P2), `fast_click` (P3), `fast_between_actions` (P4)
+- 🟡 код готов + regression PASS, A/B pending: `fast_network_idle` (P5)
+- ⏳ не начато: P6 sleep-аудит, метрики fallback_rate/mis-click в run_bench, сводный «всё включено» A/B
