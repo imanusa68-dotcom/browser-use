@@ -667,6 +667,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 						# by explicitly rebuilding and comparing when needed
 
 						# Wait a bit for the scroll to settle and DOM to update
+						# perf-audit: kept — iframe-scroll path only (rare); cross-origin iframe layout
+						# has no cheap rect-stability probe from the parent session; not a hot path.
 						await asyncio.sleep(0.2)
 
 					invalidate_dom_cache()
@@ -961,6 +963,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 						},
 						session_id=session_id,
 					)
+					# perf-audit: kept — occluded-element JS-click fallback (degraded path, not hot);
+					# short beat lets a click-triggered navigation start before we return.
 					await asyncio.sleep(0.05)
 					# Navigation is handled by BrowserSession via events
 					return None
@@ -1038,6 +1042,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 						},
 						session_id=session_id,
 					)
+					# perf-audit: kept — occluded-element JS-click fallback (degraded path, not hot).
 					await asyncio.sleep(0.05)
 					return None
 				except Exception as js_e:
@@ -1122,6 +1127,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 				# For checkbox/radio: verify state toggled, fall back to JS element.click() if not
 				if is_toggle_element and pre_click_checked is not None and checkbox_object_id:
 					try:
+						# perf-audit: kept — checkbox/radio verification only; gives the page's own
+						# click handlers one beat to toggle state before readback (avoids false
+						# 'unchanged' -> unnecessary JS re-click on slow frames).
 						await asyncio.sleep(0.05)
 						state_res = await cdp_session.cdp_client.send.Runtime.callFunctionOn(
 							params={
@@ -1141,6 +1149,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 								params={'functionDeclaration': 'function() { this.click(); }', 'objectId': checkbox_object_id},
 								session_id=session_id,
 							)
+							# perf-audit: kept — recovery path after a failed CDP checkbox toggle (rare).
 							await asyncio.sleep(0.05)
 							final_res = await cdp_session.cdp_client.send.Runtime.callFunctionOn(
 								params={
@@ -1181,6 +1190,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 					)
 
 					# Small delay for dialog dismissal
+					# perf-audit: kept — error-recovery JS-click after CDP click failure (not hot).
 					await asyncio.sleep(0.1)
 
 					return None
@@ -1386,6 +1396,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 						session_id=cdp_session.session_id,
 					)
 				# Add 10ms delay between keystrokes
+				# perf-audit: kept — page-level typing without a focused element (rare path,
+				# used when no element node is targeted); deliberate human-speed pacing.
 				await asyncio.sleep(0.010)
 		except Exception as e:
 			raise Exception(f'Failed to type to page: {str(e)}')
@@ -2636,6 +2648,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 			)
 
 			# Wait for navigation
+			# perf-audit: kept — go_back is rare (not hot); navigateToHistoryEntry has no
+			# per-call completion signal here, page-readiness is re-checked by DOMWatchdog anyway.
 			await asyncio.sleep(0.5)
 			# Navigation is handled by BrowserSession via events
 
@@ -2664,6 +2678,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			)
 
 			# Wait for navigation
+			# perf-audit: kept — go_forward is rare (not hot); same rationale as go_back.
 			await asyncio.sleep(0.5)
 			# Navigation is handled by BrowserSession via events
 
@@ -2679,6 +2694,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 			await cdp_session.cdp_client.send.Page.reload(session_id=cdp_session.session_id)
 
 			# Wait for reload
+			# perf-audit: kept — explicit refresh action is rare; full readiness is enforced
+			# afterwards by DOMWatchdog stability waits (P5 covers the pending-request part).
 			await asyncio.sleep(1.0)
 
 			# Note: We don't clear cached state here - let the next state fetch rebuild as needed
@@ -2700,6 +2717,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			else:
 				self.logger.info(f'🕒 Waiting for {actual_seconds} seconds')
 
+			# perf-audit: kept — user/LLM-requested explicit wait action; sleeping IS the feature.
 			await asyncio.sleep(actual_seconds)
 		except Exception as e:
 			raise
@@ -2912,6 +2930,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 						)
 
 						# Small delay between characters (10ms)
+						# perf-audit: kept — send_keys handles keyboard shortcuts/few chars (not hot);
+						# pacing protects shortcut handlers that debounce key events.
 						await asyncio.sleep(0.010)
 
 			self.logger.info(f'⌨️ Sent keys: {event.keys}')
@@ -2919,6 +2939,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# Note: We don't clear cached state on Enter; multi_act will detect DOM changes
 			# and rebuild explicitly. We still wait briefly for potential navigation.
 			if 'enter' in event.keys.lower() or 'return' in event.keys.lower():
+				# perf-audit: kept — only when Enter was sent: one beat for a possible
+				# form-submit navigation to start before control returns to the agent.
 				await asyncio.sleep(0.1)
 		except Exception as e:
 			raise
@@ -3395,6 +3417,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 				},
 				session_id=cdp_session.session_id,
 			)
+			# perf-audit: kept — ARIA dropdown expansion (rare action); options render async
+			# with framework animation, no generic completion signal to poll cheaply.
 			await asyncio.sleep(0.5)
 
 		# Now extract options from the aria-controls referenced element
@@ -3826,6 +3850,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 						except Exception:
 							pass  # non-fatal, best-effort
 
+						# perf-audit: kept — one-shot retry inside dropdown-selection error recovery.
 						await asyncio.sleep(1.0)
 
 						retry_result = await cdp_session.cdp_client.send.Runtime.callFunctionOn(
