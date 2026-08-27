@@ -1,0 +1,181 @@
+{
+  "label": "sanity",
+  "profile": "baseline",
+  "n_runs": 6,
+  "success_rate": 1.0,
+  "sr_wilson_ci": [
+    0.61,
+    1.0
+  ],
+  "t_task_p50": 10.84,
+  "t_task_mean": 10.6,
+  "n_steps_mean": 3,
+  "results": [
+    {
+      "task": "search_extract",
+      "run": 0,
+      "success": true,
+      "error": null,
+      "t_task_s": 10.49,
+      "n_steps": 3,
+      "final_text": "20 results found for Tools.",
+      "prompt_tokens": 12632,
+      "completion_tokens": 101,
+      "cost": 0.0,
+      "invocations": 2
+    },
+    {
+      "task": "form_fill",
+      "run": 0,
+      "success": true,
+      "error": null,
+      "t_task_s": 11.32,
+      "n_steps": 3,
+      "final_text": "Confirmation: Alice Smith (alice@example.com) from Germany",
+      "prompt_tokens": 12647,
+      "completion_tokens": 158,
+      "cost": 0.0,
+      "invocations": 2
+    },
+    {
+      "task": "table_paginate",
+      "run": 0,
+      "success": true,
+      "error": null,
+      "t_task_s": 13.79,
+      "n_steps": 4,
+      "final_text": "Product 25 costs $85.",
+      "prompt_tokens": 19549,
+      "completion_tokens": 119,
+      "cost": 0.0,
+      "invocations": 3
+    },
+    {
+      "task": "login_flow",
+      "run": 0,
+      "success": true,
+      "error": null,
+      "t_task_s": 11.2,
+      "n_steps": 3,
+      "final_text": "Account balance is $4521.77.",
+      "prompt_tokens": 12560,
+      "completion_tokens": 117,
+      "cost": 0.0,
+      "invocations": 2
+    },
+    {
+      "task": "modal_dismiss",
+      "run": 0,
+      "success": true,
+      "error": null,
+      "t_task_s": 9.76,
+      "n_steps": 3,
+      "final_text": "The launch code is FALCON-42.",
+      "prompt_tokens": 12503,
+      "completion_tokens": 92,
+      "cost": 0.0,
+      "invocations": 2
+    },
+    {
+      "task": "heavy_dom",
+      "run": 0,
+      "success": true,
+      "error": null,
+      "t_task_s": 7.04,
+      "n_steps": 2,
+      "final_text": "The magic number is 7319.",
+      "prompt_tokens": 6854,
+      "completion_tokens": 52,
+      "cost": 0.0,
+      "invocations": 1
+    }
+  ],
+  "span_aggregate": {
+    "agent.step": {
+      "n": 12,
+      "p50_ms": 3979.8,
+      "p95_ms": 5127.7,
+      "total_ms": 47182.2
+    },
+    "browser.screenshot": {
+      "n": 12,
+      "p50_ms": 127.2,
+      "p95_ms": 167.8,
+      "total_ms": 1845.5
+    },
+    "browser.state_request": {
+      "n": 18,
+      "p50_ms": 135.9,
+      "p95_ms": 521.2,
+      "total_ms": 3692.1
+    },
+    "cdp.cmd": {
+      "n": 785,
+      "p50_ms": 3.2,
+      "p95_ms": 89.5,
+      "total_ms": 21178.5
+    },
+    "dom.cdp_ax_tree": {
+      "n": 18,
+      "p50_ms": 12.2,
+      "p95_ms": 378.2,
+      "total_ms": 992.9
+    },
+    "dom.cdp_get_all_trees": {
+      "n": 18,
+      "p50_ms": 25.3,
+      "p95_ms": 387.4,
+      "total_ms": 1267.0
+    },
+    "dom.get_dom_tree": {
+      "n": 18,
+      "p50_ms": 28.9,
+      "p95_ms": 497.2,
+      "total_ms": 1552.5
+    },
+    "dom.get_serialized_dom_tree": {
+      "n": 18,
+      "p50_ms": 30.5,
+      "p95_ms": 511.0,
+      "total_ms": 1604.6
+    },
+    "idle.sleep": {
+      "n": 510,
+      "p50_ms": 13.8,
+      "p95_ms": 2125.0,
+      "total_ms": 186179.0
+    },
+    "phase.execute_actions": {
+      "n": 12,
+      "p50_ms": 846.3,
+      "p95_ms": 1566.9,
+      "total_ms": 7689.6
+    },
+    "phase.get_next_action": {
+      "n": 12,
+      "p50_ms": 2959.4,
+      "p95_ms": 3242.9,
+      "total_ms": 35618.6
+    },
+    "phase.llm_call": {
+      "n": 12,
+      "p50_ms": 2959.1,
+      "p95_ms": 3242.7,
+      "total_ms": 35615.9
+    },
+    "phase.multi_act": {
+      "n": 18,
+      "p50_ms": 256.4,
+      "p95_ms": 1566.8,
+      "total_ms": 10154.5
+    },
+    "phase.prepare_context": {
+      "n": 12,
+      "p50_ms": 289.9,
+      "p95_ms": 551.6,
+      "total_ms": 3830.0
+    },
+    "_cdp_cmds_per_run": 130.8,
+    "_sleep_ms_per_run": 31029.8
+  }
+}

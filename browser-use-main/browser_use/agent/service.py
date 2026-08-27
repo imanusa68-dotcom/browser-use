@@ -3,6 +3,7 @@ import gc
 import inspect
 import json
 import logging
+import os
 import re
 import tempfile
 import time
@@ -2728,6 +2729,87 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 			await self.close()
 
+	async def _wait_between_actions_probe(self) -> None:
+		"""P4 (fast_between_actions): condition-driven replacement for the unconditional
+		`sleep(wait_between_actions)` between batched actions.
+
+		Instead of always paying the fixed pause, poll (every 25ms) a single
+		Runtime.evaluate probe that reports the page as "settled" when ALL of:
+		  - document.readyState is 'complete' or 'interactive';
+		  - no in-flight fetch/XHR started via the injected counters
+		    (window.__buPerfNetCount — wrapper installed once per document);
+		  - no DOM mutations observed in the last 25ms
+		    (window.__buPerfLastMutation — MutationObserver installed once per document).
+
+		Exits immediately when the page is settled (typical saving ~75-100ms/action).
+		Hard ceiling = wait_between_actions * 5 (0.5s at the 0.1s default): on ceiling
+		we log `perf.fallback: between_actions_ceiling` and proceed — i.e. never worse
+		than legacy, which would have proceeded after the fixed sleep anyway.
+		Any probe error → immediate fallback to the legacy fixed sleep.
+		"""
+		base_wait = self.browser_profile.wait_between_actions
+		ceiling_s = base_wait * 5
+		probe_js = """
+(function() {
+	try {
+		if (!window.__buPerfProbeInstalled) {
+			window.__buPerfProbeInstalled = true;
+			window.__buPerfNetCount = 0;
+			window.__buPerfLastMutation = performance.now();
+			const _fetch = window.fetch;
+			if (_fetch) {
+				window.fetch = function() {
+					window.__buPerfNetCount++;
+					return _fetch.apply(this, arguments).finally(() => { window.__buPerfNetCount--; });
+				};
+			}
+			const _send = XMLHttpRequest.prototype.send;
+			XMLHttpRequest.prototype.send = function() {
+				window.__buPerfNetCount++;
+				this.addEventListener('loadend', () => { window.__buPerfNetCount--; }, { once: true });
+				return _send.apply(this, arguments);
+			};
+			try {
+				new MutationObserver(() => { window.__buPerfLastMutation = performance.now(); })
+					.observe(document.documentElement, { childList: true, subtree: true, attributes: true, characterData: true });
+			} catch (e) {}
+			return { settled: false, installed_now: true };
+		}
+		const readyOk = document.readyState === 'complete' || document.readyState === 'interactive';
+		const netOk = (window.__buPerfNetCount || 0) <= 0;
+		const quietOk = (performance.now() - (window.__buPerfLastMutation || 0)) >= 25;
+		return { settled: readyOk && netOk && quietOk };
+	} catch (e) {
+		return { settled: false, error: String(e) };
+	}
+})()
+"""
+		loop = asyncio.get_event_loop()
+		deadline = loop.time() + ceiling_s
+		try:
+			assert self.browser_session is not None
+			cdp_session = await self.browser_session.get_or_create_cdp_session(focus=True)
+			while True:
+				res = await asyncio.wait_for(
+					cdp_session.cdp_client.send.Runtime.evaluate(
+						params={'expression': probe_js, 'returnByValue': True},
+						session_id=cdp_session.session_id,
+					),
+					timeout=1.0,
+				)
+				value = (res.get('result') or {}).get('value') or {}
+				if value.get('settled'):
+					return  # page is settled -> proceed immediately
+				if loop.time() >= deadline:
+					self.logger.debug('perf.fallback: between_actions_ceiling (page not settled within ceiling, proceeding as legacy would)')
+					return
+				await asyncio.sleep(min(0.025, max(0.0, deadline - loop.time())))
+		except Exception as e:
+			# Probe unavailable (navigation in flight, CDP hiccup, ...) -> legacy fixed sleep.
+			self.logger.debug(f'perf.fallback: between_actions probe error ({type(e).__name__}: {e}), using legacy fixed sleep')
+			remaining = max(0.0, deadline - loop.time())
+			await asyncio.sleep(min(base_wait, remaining) if remaining > 0 else 0)
+
 	@observe_debug(ignore_input=True, ignore_output=True)
 	@time_execution_async('--multi_act')
 	async def multi_act(self, actions: list[ActionModel]) -> list[ActionResult]:
@@ -2769,8 +2851,18 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 			# wait between actions (only after first action)
 			if i > 0:
-				self.logger.debug(f'Waiting {self.browser_profile.wait_between_actions} seconds between actions')
-				await asyncio.sleep(self.browser_profile.wait_between_actions)
+				# P4 (fast_between_actions): condition-driven settle probe instead of the
+				# unconditional fixed sleep. Ceiling = wait_between_actions * 5; on ceiling
+				# or probe error -> behaves like legacy. URL/focus batch invalidation below
+				# is untouched — it runs after the action, independent of this wait.
+				_p4_fast = getattr(self.browser_profile, 'fast_between_actions', False) or (
+					os.environ.get('BROWSER_USE_FAST_BETWEEN_ACTIONS', '') == '1'
+				)
+				if _p4_fast and self.browser_profile.wait_between_actions > 0:
+					await self._wait_between_actions_probe()
+				else:
+					self.logger.debug(f'Waiting {self.browser_profile.wait_between_actions} seconds between actions')
+					await asyncio.sleep(self.browser_profile.wait_between_actions)
 
 			try:
 				await self._check_stop_or_pause()

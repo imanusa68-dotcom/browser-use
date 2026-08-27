@@ -308,3 +308,57 @@ O2–O7 remain drafted but **not applied** per the one-change-one-measurement ru
 
 Вердикт P3: **принято как opt-in** — SR non-inferior (0 п.п. разницы), выигрыш ~130 мс на клик
 (~580 мс/прогон при 4–5 кликах), поведение при выключенном флаге бит-в-бит легаси.
+
+---
+
+## Итерации P4/P5 — код реализован, A/B PENDING (2026-08-27, сессия прервана по бюджету)
+
+**Статус: код за флагами (default OFF), regression 4/4 PASS в обоих армах, изолированные
+A/B-бенчи НЕ выполнены — до их прохождения флаги считаются НЕ принятыми и остаются OFF.**
+
+### P4 `fast_between_actions` (env `BROWSER_USE_FAST_BETWEEN_ACTIONS=1`)
+- Где: `agent/service.py` — новый хелпер `_wait_between_actions_probe()`; в `multi_act`
+  (блок `if i > 0`) фиксированный `sleep(wait_between_actions)` заменяется probe только при флаге.
+- Probe (один Runtime.evaluate, поллинг 25мс): readyState complete/interactive
+  + in-flight fetch/XHR == 0 (однократно инжектируемые обёртки `window.__buPerfNetCount`)
+  + нет DOM-мутаций последние 25мс (MutationObserver `window.__buPerfLastMutation`).
+- Потолок = `wait_between_actions × 5` (0.5с при дефолте) → лог `perf.fallback: between_actions_ceiling`, идём дальше (= легаси).
+- Ошибка probe (навигация/CDP) → лог `perf.fallback: between_actions probe error` → легаси fixed sleep.
+- Инвалидация батча по URL/фокусу в multi_act не тронута (выполняется после действия, независимо от wait).
+- Regression: 4/4 PASS (арм `BROWSER_USE_FAST_BETWEEN_ACTIONS=1`), 4/4 PASS legacy.
+- TODO следующей сессии: изолированный A/B (`--runs 3`, все 6 задач; отдельно form_fill + /delayed_field + /slow).
+
+### P5 `fast_network_idle` (env `BROWSER_USE_FAST_NETWORK_IDLE=1`)
+- Где: `browser/watchdogs/dom_watchdog.py` — новый хелпер `_wait_network_idle_fast()` +
+  `_is_long_lived_request()`; в `on_BrowserStateRequestEvent` слепой `sleep(0.3)` под
+  `if pending_requests_before_wait:` заменяется поллингом только при флаге.
+- Поллинг `_get_pending_network_requests()` каждые ~50мс (каждый вызов под 1с-таймаутом);
+  выход, когда pending-множество (без websocket/SSE/media/beacon/стриминга — фильтр
+  `_is_long_lived_request`) пусто 100мс подряд (quiet-window).
+- Потолок = `profile.wait_for_network_idle_page_load_time` (default 0.5с) →
+  `perf.fallback: network_idle_ceiling`, идём дальше (= легаси, который всегда шёл дальше после 0.3с).
+- Ошибка поллинга → `perf.fallback: network_idle poll error`, идём немедленно.
+- Regression: 4/4 PASS (арм `BROWSER_USE_FAST_NETWORK_IDLE=1`, включая slow_page /slow 2с), 4/4 PASS legacy.
+- TODO следующей сессии: изолированный A/B + целевые прогоны /slow и /delayed_field.
+
+### P6 — аудит россыпи sleep: НЕ НАЧАТ (перенесён на следующую сессию)
+
+### Сводная таблица «sleep → замена» (актуализация после P3)
+
+| Sleep | Замена | Флаг | Статус |
+|---|---|---|---|
+| click: sleep(0.05) после mouseMoved | 0 (порядок гарантирует CDP ack) | fast_click | ✅ A/B принят |
+| click: press hold sleep(0.08/0.05) | `click_press_duration_ms` (20мс) | fast_click | ✅ A/B принят |
+| multi_act: sleep(wait_between_actions) | probe readyState+net+mutations, потолок ×5 | fast_between_actions | 🟡 код готов, regression PASS, A/B pending |
+| dom_watchdog: sleep(0.3) при pending | poll pending (без ws/SSE) + quiet 100мс, потолок 0.5с | fast_network_idle | 🟡 код готов, regression PASS, A/B pending |
+
+### Рекомендация по флагам (обновлена)
+- `fast_input`, `fast_scroll_stability`, `fast_click` — **приняты, opt-in**.
+- `fast_between_actions`, `fast_network_idle` — код в ветке, **НЕ включать до изолированных A/B**.
+
+### План следующей сессии
+1. A/B P4 (только BROWSER_USE_FAST_BETWEEN_ACTIONS=1) — runs 3, полный набор + delayed_field/slow.
+2. A/B P5 (только BROWSER_USE_FAST_NETWORK_IDLE=1) — runs 3 + целевые /slow, /delayed_field.
+3. P6 sleep-аудит (таблица вердиктов по каждому asyncio.sleep в default_action_watchdog).
+4. Метрики fallback_rate и mis-click rate в run_bench.py.
+5. Сводный «всё включено» A/B (5 флагов одновременно) — проверка интерференции.

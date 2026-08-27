@@ -1,6 +1,7 @@
 """DOM watchdog for browser DOM tree management using CDP."""
 
 import asyncio
+import os
 import time
 from typing import TYPE_CHECKING
 
@@ -240,6 +241,64 @@ class DOMWatchdog(BaseWatchdog):
 
 		return []
 
+	@staticmethod
+	def _is_long_lived_request(req) -> bool:
+		"""True for connection kinds that legitimately stay open (websocket / SSE /
+		media streaming) — these must NOT hold the network-idle wait, otherwise any
+		page with a live socket always hits the ceiling."""
+		rt = (getattr(req, 'resource_type', None) or '').lower()
+		if rt in ('websocket', 'eventsource', 'media', 'video', 'audio', 'beacon', 'ping'):
+			return True
+		url = (getattr(req, 'url', None) or '').lower()
+		if url.startswith(('ws://', 'wss://')) or '/sse' in url or 'stream' in rt:
+			return True
+		return False
+
+	async def _wait_network_idle_fast(self) -> None:
+		"""P5 (fast_network_idle): condition-driven replacement for the blind 0.3s
+		pre-snapshot sleep when requests are pending.
+
+		Polls _get_pending_network_requests() (~every 50ms; the helper itself is
+		wrapped in a 2s timeout upstream — here each call gets 1s). Exits when the
+		pending set (excluding long-lived websocket/SSE/streaming connections) is
+		empty and has stayed empty for a 100ms quiet window.
+
+		Ceiling = profile.wait_for_network_idle_page_load_time (default 0.5s).
+		On ceiling: log `perf.fallback: network_idle_ceiling` and proceed (legacy
+		behaviour — the old code always proceeded after 0.3s regardless).
+		On any polling error: same fallback, proceed immediately.
+		"""
+		try:
+			ceiling_s = float(getattr(self.browser_session.browser_profile, 'wait_for_network_idle_page_load_time', 0.5))
+		except Exception:
+			ceiling_s = 0.5
+		quiet_needed_s = 0.10
+		loop = asyncio.get_event_loop()
+		deadline = loop.time() + max(0.05, ceiling_s)
+		quiet_since: float | None = None
+		while True:
+			try:
+				pending = await asyncio.wait_for(self._get_pending_network_requests(), timeout=1.0)
+			except Exception as e:
+				self.logger.debug(f'perf.fallback: network_idle poll error ({type(e).__name__}), proceeding')
+				return
+			relevant = [r for r in pending if not self._is_long_lived_request(r)]
+			now = loop.time()
+			if not relevant:
+				if quiet_since is None:
+					quiet_since = now
+				elif now - quiet_since >= quiet_needed_s:
+					self.logger.debug('🔍 fast_network_idle: pending set quiet for 100ms, proceeding')
+					return
+			else:
+				quiet_since = None
+			if now >= deadline:
+				self.logger.debug(
+					f'perf.fallback: network_idle_ceiling ({len(relevant)} still pending after {ceiling_s:.2f}s, proceeding as legacy would)'
+				)
+				return
+			await asyncio.sleep(min(0.05, max(0.0, deadline - now)))
+
 	@observe_debug(ignore_input=True, ignore_output=True, name='browser_state_request_event')
 	async def on_BrowserStateRequestEvent(self, event: BrowserStateRequestEvent) -> 'BrowserStateSummary':
 		"""Handle browser state request by coordinating DOM building and screenshot capture.
@@ -284,8 +343,21 @@ class DOMWatchdog(BaseWatchdog):
 			self.logger.debug('🔍 DOMWatchdog.on_BrowserStateRequestEvent: ⏳ Waiting for page stability...')
 			try:
 				if pending_requests_before_wait:
-					# Reduced from 1s to 0.3s for faster DOM builds while still allowing critical resources to load
-					await asyncio.sleep(0.3)
+					# P5 (fast_network_idle): instead of a blind 0.3s sleep, poll the existing
+					# _get_pending_network_requests() helper until the pending set is empty and
+					# STAYS empty for a 100ms quiet window. Long-lived streaming connections
+					# (websocket / SSE / media) are excluded so they never hold the wait.
+					# Ceiling = profile.wait_for_network_idle_page_load_time (default 0.5s):
+					# on ceiling we log `perf.fallback: network_idle_ceiling` and proceed —
+					# same de-facto outcome as legacy (which always proceeded after 0.3s).
+					_p5_fast = getattr(self.browser_session.browser_profile, 'fast_network_idle', False) or (
+						os.environ.get('BROWSER_USE_FAST_NETWORK_IDLE', '') == '1'
+					)
+					if _p5_fast:
+						await self._wait_network_idle_fast()
+					else:
+						# Reduced from 1s to 0.3s for faster DOM builds while still allowing critical resources to load
+						await asyncio.sleep(0.3)
 				self.logger.debug('🔍 DOMWatchdog.on_BrowserStateRequestEvent: ✅ Page stability complete')
 			except Exception as e:
 				self.logger.warning(
