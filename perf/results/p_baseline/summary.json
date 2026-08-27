@@ -1,0 +1,220 @@
+{
+  "label": "p_baseline",
+  "profile": "baseline",
+  "n_runs": 9,
+  "success_rate": 1.0,
+  "sr_wilson_ci": [
+    0.701,
+    1
+  ],
+  "t_task_p50": 10.11,
+  "t_task_mean": 9.65,
+  "n_steps_mean": 2.67,
+  "results": [
+    {
+      "task": "search_extract",
+      "run": 0,
+      "success": true,
+      "error": null,
+      "t_task_s": 10.78,
+      "n_steps": 3,
+      "final_text": "20 results found for Tools.",
+      "prompt_tokens": 12632,
+      "completion_tokens": 101,
+      "cost": 0.0,
+      "invocations": 2
+    },
+    {
+      "task": "search_extract",
+      "run": 1,
+      "success": true,
+      "error": null,
+      "t_task_s": 9.64,
+      "n_steps": 3,
+      "final_text": "20 results found for Tools.",
+      "prompt_tokens": 12632,
+      "completion_tokens": 101,
+      "cost": 0.0,
+      "invocations": 2
+    },
+    {
+      "task": "search_extract",
+      "run": 2,
+      "success": true,
+      "error": null,
+      "t_task_s": 10.11,
+      "n_steps": 3,
+      "final_text": "20 results found for Tools.",
+      "prompt_tokens": 12632,
+      "completion_tokens": 101,
+      "cost": 0.0,
+      "invocations": 2
+    },
+    {
+      "task": "form_fill",
+      "run": 0,
+      "success": true,
+      "error": null,
+      "t_task_s": 11.51,
+      "n_steps": 3,
+      "final_text": "Confirmation: Alice Smith (alice@example.com) from Germany",
+      "prompt_tokens": 12647,
+      "completion_tokens": 158,
+      "cost": 0.0,
+      "invocations": 2
+    },
+    {
+      "task": "form_fill",
+      "run": 1,
+      "success": true,
+      "error": null,
+      "t_task_s": 11.68,
+      "n_steps": 3,
+      "final_text": "Confirmation: Alice Smith (alice@example.com) from Germany",
+      "prompt_tokens": 12647,
+      "completion_tokens": 158,
+      "cost": 0.0,
+      "invocations": 2
+    },
+    {
+      "task": "form_fill",
+      "run": 2,
+      "success": true,
+      "error": null,
+      "t_task_s": 11.51,
+      "n_steps": 3,
+      "final_text": "Confirmation: Alice Smith (alice@example.com) from Germany",
+      "prompt_tokens": 12647,
+      "completion_tokens": 158,
+      "cost": 0.0,
+      "invocations": 2
+    },
+    {
+      "task": "heavy_dom",
+      "run": 0,
+      "success": true,
+      "error": null,
+      "t_task_s": 7.1,
+      "n_steps": 2,
+      "final_text": "The magic number is 7319.",
+      "prompt_tokens": 6853,
+      "completion_tokens": 52,
+      "cost": 0.0,
+      "invocations": 1
+    },
+    {
+      "task": "heavy_dom",
+      "run": 1,
+      "success": true,
+      "error": null,
+      "t_task_s": 7.09,
+      "n_steps": 2,
+      "final_text": "The magic number is 7319.",
+      "prompt_tokens": 6853,
+      "completion_tokens": 52,
+      "cost": 0.0,
+      "invocations": 1
+    },
+    {
+      "task": "heavy_dom",
+      "run": 2,
+      "success": true,
+      "error": null,
+      "t_task_s": 7.4,
+      "n_steps": 2,
+      "final_text": "The magic number is 7319.",
+      "prompt_tokens": 6854,
+      "completion_tokens": 52,
+      "cost": 0.0,
+      "invocations": 1
+    }
+  ],
+  "span_aggregate": {
+    "agent.step": {
+      "n": 15,
+      "p50_ms": 3742.1,
+      "p95_ms": 5646.5,
+      "total_ms": 61399.1
+    },
+    "browser.screenshot": {
+      "n": 15,
+      "p50_ms": 154.2,
+      "p95_ms": 498.9,
+      "total_ms": 3247.6
+    },
+    "browser.state_request": {
+      "n": 24,
+      "p50_ms": 176.4,
+      "p95_ms": 966.5,
+      "total_ms": 7559.8
+    },
+    "cdp.cmd": {
+      "n": 1177,
+      "p50_ms": 2.9,
+      "p95_ms": 127.4,
+      "total_ms": 22264.3
+    },
+    "dom.cdp_ax_tree": {
+      "n": 24,
+      "p50_ms": 15.0,
+      "p95_ms": 708.4,
+      "total_ms": 3717.8
+    },
+    "dom.cdp_get_all_trees": {
+      "n": 24,
+      "p50_ms": 36.6,
+      "p95_ms": 757.3,
+      "total_ms": 4315.6
+    },
+    "dom.get_dom_tree": {
+      "n": 24,
+      "p50_ms": 42.9,
+      "p95_ms": 925.2,
+      "total_ms": 5149.7
+    },
+    "dom.get_serialized_dom_tree": {
+      "n": 24,
+      "p50_ms": 44.6,
+      "p95_ms": 953.1,
+      "total_ms": 5269.0
+    },
+    "idle.sleep": {
+      "n": 758,
+      "p50_ms": 8.2,
+      "p95_ms": 1794.5,
+      "total_ms": 253769.3
+    },
+    "phase.execute_actions": {
+      "n": 15,
+      "p50_ms": 0.9,
+      "p95_ms": 1967.3,
+      "total_ms": 9750.2
+    },
+    "phase.get_next_action": {
+      "n": 15,
+      "p50_ms": 3067.8,
+      "p95_ms": 3301.8,
+      "total_ms": 46315.7
+    },
+    "phase.llm_call": {
+      "n": 15,
+      "p50_ms": 3067.5,
+      "p95_ms": 3301.6,
+      "total_ms": 46311.8
+    },
+    "phase.multi_act": {
+      "n": 24,
+      "p50_ms": 334.1,
+      "p95_ms": 1967.2,
+      "total_ms": 14905.8
+    },
+    "phase.prepare_context": {
+      "n": 15,
+      "p50_ms": 268.1,
+      "p95_ms": 620.0,
+      "total_ms": 5224.9
+    },
+    "_cdp_cmds_per_run": 130.8,
+    "_sleep_ms_per_run": 28196.6
+  }
+}

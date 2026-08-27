@@ -125,3 +125,75 @@ O2–O7 remain drafted but **not applied** per the one-change-one-measurement ru
 5. Multi-action batching + invalidation already exists and works; use it (it's why scripted runs finish in 2–4 steps).
 6. N+1 `runIfWaitingForDebugger` (21/run × 23ms) is a small clean win.
 7. Harness (fixtures + scripted LLM + Wilson CI) is in `perf/` and gives deterministic SR=100% baseline — every optimization now gets a one-flag A/B with quality guardrails.
+
+---
+
+## Phase 2 (P1–P6, «слепые паузы») — статус на 2026-08-27
+
+### Выполнено
+
+**P1 fast_input — реализовано и измерено (A/B, изолированное изменение).**
+- Флаг: `BrowserProfile.fast_input=False` (opt-in) или env `BROWSER_USE_FAST_INPUT=1`.
+- Реализация (`default_action_watchdog.py::_input_text_element_node_impl`):
+  один `Input.insertText` вместо посимвольного цикла (3 CDP-события + 6мс пауз на символ)
+  → существующий `_trigger_framework_events` (input/change для React/Vue/Angular)
+  → **один rAF-тик с потолком 100мс** (`_raf_tick`) вместо `sleep(0.05)` перед readback
+  → readback ВСЕГДА; мismatch или исключение ⇒ лог `perf.fallback:` + очистка поля +
+  **автоматический откат на нетронутый посимвольный путь в том же действии**.
+- Автоисключения (fast_input не применяется): contenteditable / role=textbox вне
+  input|textarea; input с pattern/data-mask/inputmask-классами; inputmode=numeric на text;
+  все типы вне text/search/email/url/tel/password/number; текст с '\n' (Enter-семантика).
+- Для sensitive-полей значение readback в лог не пишется.
+
+**A/B результат P1** (3 задачи × 3 прогона, mock LLM TTFT=700ms, свежий baseline в той же среде):
+
+| Метрика | p_baseline | p1_fast_input | Δ |
+|---|---|---|---|
+| SR | 9/9 = 100% | 9/9 = 100% | 0 (non-inferior, маржа −2 п.п. соблюдена) |
+| T_task p50 | 10.11 s | 10.28 s | шум (±0.5s между прогонами) |
+| T_task mean | 9.65 s | 9.42 s | −2.4% |
+| sleep ms/run (все, вкл. фоновые poll'ы watchdog'ов) | 28 197 | 27 483 | −714 мс/прогон |
+| fallback_rate | — | 0/9 прогонов (fixture-поля без масок) | OK |
+
+Вердикт: **принято как opt-in** (SR не деградировал, слепые паузы ввода убраны,
+выигрыш на wall-clock скрыт фиксированной latency mock-LLM — с реальным провайдером
+эффект аддитивен к O1/O6). heavy_dom стабильно быстрее (6.93–6.99s vs 7.09–7.40s baseline).
+
+**Хелперы под P2 (реализованы, ещё не включены в click-путь):**
+- `_raf_tick(cdp_session, timeout_ms)` — ожидание одного requestAnimationFrame с потолком;
+- `_wait_element_rect_stable(backend_node_id, cdp_session, ceiling_ms=300)` — двойной замер
+  rect через rAF, |Δ|<1px ⇒ стабильно; потолок 300мс ⇒ последний замер (де-факто старое поведение).
+
+**Флаги конфига добавлены в BrowserProfile (все default=False):**
+`fast_input`, `fast_scroll_stability` (P2), `fast_click` + `click_press_duration_ms=20` (P3),
+`fast_between_actions` (P4), `fast_network_idle` (P5) — с комментариями, что каждый защищает.
+
+**Регрессионные фикстуры добавлены** (`perf/fixtures/server.py`):
+- `/delayed_field` — поле появляется через 1.5s (setTimeout-рендер) — тест P4;
+- `/masked_phone` — маска (XXX) XXX-XXXX на input-событии — тест отката P1;
+- `/shifting_button` — lazy-баннер сдвигает кнопку через 300мс после скролла — тест P2;
+- `/react_input` — controlled-input: значение живёт в state, ре-рендер из state — тест framework events;
+- `/slow` (2s) — уже был.
+
+### Осталось (по одному изменению за прогон, план в ТЗ актуален)
+
+- **P2**: воткнуть `_wait_element_rect_stable` вместо `scrollIntoViewIfNeeded + sleep(0.05)`
+  в `_click_element_node_impl` (строка ~771 orig) и в input-путь (sleep(0.01) ~1786) за флагом
+  `fast_scroll_stability`; прогнать `/shifting_button`-регрессию + бенч.
+- **P3**: за `fast_click`: пауза после mouseMoved → 0 (после P2), pressed→released →
+  `click_press_duration_ms` (20мс), после released → удалить (дальше URL/focus-check в multi_act).
+- **P4**: в `agent/service.py:2773` за `fast_between_actions`: probe
+  (readyState==='complete' && in-flight==0 && нет мутаций за rAF через одноразовый
+  MutationObserver-счётчик) → чисто ⇒ немедленно; грязно ⇒ poll 25мс, потолок wait_between_actions*5.
+  Регрессия `/delayed_field` обязана проходить.
+- **P5**: `dom_watchdog.py:288` за `fast_network_idle`: poll `_get_pending_network_requests`
+  каждые 50мс, quiet-period 100мс, потолок `wait_for_network_idle_page_load_time`,
+  фильтр вечных запросов (WS/SSE/аналитика — фильтр в JS уже частично есть).
+- **P6**: аудит строк 553, 897–1212, 2393–2457 (комментарий «что защищает» → удалить/заменить/TODO).
+- Регрессионные тесты-скрипты поверх новых фикстур (прямой dispatch TypeTextEvent/ClickElementEvent,
+  без LLM) + прогон на `/slow`; метрики fallback_rate / mis-click в отчёт.
+
+### Рекомендация по флагам (текущая)
+
+- `fast_input` — **opt-in** (принят по A/B; включать в default после live-site smoke на масках/React).
+- Остальные флаги — выключены до своих изолированных A/B.

@@ -148,6 +148,85 @@ class Handler(BaseHTTPRequestHandler):
 
 			_t.sleep(2.0)
 			self._send(page('Slow', '<h1 id="loaded">Slow page loaded. Token: ZEBRA-9</h1>'))
+		elif path == '/delayed_field':
+			# Regression P4: field + submit appear 1.5s AFTER load (setTimeout render).
+			# An agent that acts on the pre-render DOM must wait, not error.
+			self._send(
+				page(
+					'Delayed field',
+					'<h1>Delayed form</h1><div id="slot"><p id="loading">Loading form…</p></div>'
+					'<div id="out"></div>'
+					'<script>setTimeout(function(){'
+					"document.getElementById('slot').innerHTML="
+					'\'<input id="code" type="text" placeholder="enter code">\''
+					'+\'<button id="go" onclick="document.getElementById(\\\'out\\\').textContent=\\\'CODE:\\\'+document.getElementById(\\\'code\\\').value">Submit code</button>\';'
+					'}, 1500);</script>',
+				)
+			)
+		elif path == '/masked_phone':
+			# Regression P1: input formatter reformats digits as (XXX) XXX-XXXX on every
+			# 'input' event. Raw insertText of digits => readback mismatch => per-char fallback.
+			self._send(
+				page(
+					'Masked phone',
+					'<h1>Phone form</h1>'
+					'<input id="phone" type="text" inputmode="numeric" data-mask="(000) 000-0000" placeholder="phone">'
+					'<button id="save" onclick="document.getElementById(\'res\').textContent=\'PHONE:\'+document.getElementById(\'phone\').value">Save</button>'
+					'<div id="res"></div>'
+					'<script>'
+					"var p=document.getElementById('phone');"
+					"p.addEventListener('input',function(){"
+					"var d=p.value.replace(/\\D/g,'').slice(0,10);var o=d;"
+					"if(d.length>6)o='('+d.slice(0,3)+') '+d.slice(3,6)+'-'+d.slice(6);"
+					"else if(d.length>3)o='('+d.slice(0,3)+') '+d.slice(3);"
+					"else if(d.length>0)o='('+d;"
+					'if(p.value!==o)p.value=o;});'
+					'</script>',
+				)
+			)
+		elif path == '/shifting_button':
+			# Regression P2: a lazy banner inserts itself ABOVE the target button ~300ms
+			# after scroll starts, shifting the button down. A fixed 50ms post-scroll wait
+			# mis-clicks; rect-stability waiting must catch the shift.
+			filler = ''.join(f'<p>filler line {i}</p>' for i in range(80))
+			self._send(
+				page(
+					'Shifting button',
+					f'<h1>Scroll down</h1>{filler}'
+					'<div id="bannerslot"></div>'
+					'<button id="target" onclick="document.getElementById(\'clickres\').textContent=\'TARGET-HIT\'">Confirm order</button>'
+					'<div id="clickres"></div>'
+					'<script>'
+					'var injected=false;'
+					"window.addEventListener('scroll',function(){"
+					'if(injected)return;injected=true;'
+					'setTimeout(function(){'
+					"var b=document.createElement('div');b.style.height='120px';b.style.background='#fc0';"
+					"b.textContent='LAZY BANNER LOADED';document.getElementById('bannerslot').appendChild(b);"
+					'},300);});'
+					'</script>',
+				)
+			)
+		elif path == '/react_input':
+			# Regression P1: controlled-component pattern — keystrokes/inserts are reverted
+			# unless a proper InputEvent reaches the framework's onInput handler, which
+			# mirrors the value into internal state and re-renders from state.
+			self._send(
+				page(
+					'React-like controlled input',
+					'<h1>Controlled input</h1>'
+					'<input id="ctl" type="text" placeholder="type here">'
+					'<button id="show" onclick="document.getElementById(\'state\').textContent=\'STATE:\'+window.__state">Show state</button>'
+					'<div id="state"></div>'
+					'<script>'
+					"window.__state='';"
+					"var el=document.getElementById('ctl');"
+					'function render(){if(el.value!==window.__state)el.value=window.__state;}'
+					"el.addEventListener('input',function(e){window.__state=el.value;requestAnimationFrame(render);});"
+					'setInterval(render,50);'
+					'</script>',
+				)
+			)
 		else:
 			self._send(page('404', 'not found'), 404)
 

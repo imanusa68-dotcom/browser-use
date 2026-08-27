@@ -41,6 +41,108 @@ UploadFileEvent.model_rebuild()
 class DefaultActionWatchdog(BaseWatchdog):
 	"""Handles default browser actions like click, type, and scroll using CDP."""
 
+	# ------------------------------------------------------------------
+	# Perf helpers: event/condition-driven waits replacing fixed sleeps.
+	# Every fast path is opt-in (BrowserProfile flag or env var) and keeps
+	# the original slow path as an automatic fallback. Fallback activations
+	# are logged with a 'perf.fallback' marker so fallback_rate can be
+	# monitored per-site (if >5% on a site, disable the fast path there).
+	# ------------------------------------------------------------------
+
+	def _perf_flag(self, attr: str, env: str) -> bool:
+		"""Read an opt-in perf flag from BrowserProfile (preferred) or env var."""
+		try:
+			if getattr(self.browser_session.browser_profile, attr, False):
+				return True
+		except Exception:
+			pass
+		return os.environ.get(env, '') == '1'
+
+	async def _raf_tick(self, cdp_session, timeout_ms: int = 100) -> None:
+		"""Wait exactly one requestAnimationFrame tick (frame boundary) with a hard ceiling.
+
+		Replaces fixed sleeps whose only purpose is 'let the page paint/JS settle for a moment'.
+		A rAF tick is the *condition* those sleeps were approximating: after it fires, style/layout
+		for the current frame is committed. Ceiling protects against background pages where rAF
+		is throttled or never fires (falls back to returning after timeout_ms).
+		"""
+		try:
+			await asyncio.wait_for(
+				cdp_session.cdp_client.send.Runtime.evaluate(
+					params={
+						'expression': 'new Promise(r=>requestAnimationFrame(()=>r(1)))',
+						'awaitPromise': True,
+						'returnByValue': True,
+					},
+					session_id=cdp_session.session_id,
+				),
+				timeout=timeout_ms / 1000,
+			)
+		except Exception:
+			# rAF throttled/failed -> honor the ceiling semantics with a plain short sleep
+			await asyncio.sleep(min(timeout_ms, 50) / 1000)
+
+	async def _wait_element_rect_stable(
+		self, backend_node_id: int, cdp_session, ceiling_ms: int = 300
+	) -> 'object | None':
+		"""P2: wait until the element's bounding rect is identical (<1px delta) across two
+		rAF-separated measurements, i.e. any smooth-scroll / layout shift has finished.
+
+		Returns the last measured rect (same type as browser_session.get_element_coordinates)
+		or None if coordinates could not be obtained.
+
+		This is strictly MORE reliable than the old fixed sleep(0.05): on slow smooth-scroll
+		pages it keeps waiting (up to ceiling_ms), on fast pages it returns in ~1 frame (8-16ms).
+		On ceiling hit we use the last measurement — exactly the de-facto behavior of the old code.
+		"""
+		deadline = asyncio.get_event_loop().time() + ceiling_ms / 1000
+		prev = None
+		while True:
+			try:
+				rect = await self.browser_session.get_element_coordinates(backend_node_id, cdp_session)
+			except Exception:
+				rect = None
+			if rect is not None and prev is not None:
+				if abs(rect.x - prev.x) < 1 and abs(rect.y - prev.y) < 1:
+					return rect  # stable across one frame -> safe to interact
+			prev = rect
+			if asyncio.get_event_loop().time() >= deadline:
+				self.logger.debug('perf.fallback: rect not stable within ceiling, using last measurement (P2)')
+				return rect
+			await self._raf_tick(cdp_session, timeout_ms=50)
+
+	def _fast_input_eligible(self, element_node: 'EnhancedDOMTreeNode') -> bool:
+		"""P1 exclusion list: element kinds where Input.insertText is NOT auto-applied.
+
+		- contenteditable / role=textbox outside input|textarea: rich editors often intercept
+		  beforeinput/keydown and insertText can land in the wrong leaf node;
+		- masked inputs (pattern / inputmode / data-mask / masking libs by class): formatters
+		  expect per-key events to build the mask;
+		- date/time/etc: already handled earlier by the direct value assignment path.
+		"""
+		attrs = element_node.attributes or {}
+		tag = (element_node.tag_name or '').lower()
+		if attrs.get('contenteditable') in ('true', '') or (
+			attrs.get('role') == 'textbox' and tag not in ('input', 'textarea')
+		):
+			return False
+		if tag not in ('input', 'textarea'):
+			return False
+		if tag == 'input':
+			input_type = attrs.get('type', 'text').lower()
+			if input_type not in ('text', 'search', 'email', 'url', 'tel', 'password', 'number', ''):
+				return False
+		# mask/formatter indicators -> per-char path builds the mask correctly
+		if attrs.get('pattern') or attrs.get('data-mask') or attrs.get('data-inputmask'):
+			return False
+		inputmode = attrs.get('inputmode', '').lower()
+		if inputmode in ('numeric', 'decimal') and attrs.get('type', '').lower() == 'text':
+			return False
+		class_attr = attrs.get('class', '').lower()
+		if any(m in class_attr for m in ('inputmask', 'imask', 'cleave', 'masked')):
+			return False
+		return True
+
 	async def _execute_click_with_download_detection(
 		self,
 		click_coro,
@@ -1851,6 +1953,64 @@ class DefaultActionWatchdog(BaseWatchdog):
 				cleared_successfully = await self._clear_text_field(object_id=object_id, cdp_session=cdp_session)
 				if not cleared_successfully:
 					self.logger.warning('⚠️ Text field clearing failed, typing may append to existing text')
+
+			# --- P1 fast path (opt-in): single Input.insertText instead of per-char keystrokes ---
+			# Guarded by BrowserProfile.fast_input / BROWSER_USE_FAST_INPUT=1.
+			# NOT applied to: contenteditable, role=textbox, masked inputs (see _fast_input_eligible),
+			# or text containing '\n' (per-char path presses Enter which may submit forms —
+			# insertText would silently change that semantic).
+			# Readback is ALWAYS verified; any mismatch -> field is cleared and we fall through
+			# to the untouched per-char path in the same action (logged as perf.fallback).
+			fast_input_done = False
+			if (
+				self._perf_flag('fast_input', 'BROWSER_USE_FAST_INPUT')
+				and '\n' not in text
+				and self._fast_input_eligible(element_node)
+			):
+				try:
+					await cdp_session.cdp_client.send.Input.insertText(
+						params={'text': text}, session_id=cdp_session.session_id
+					)
+					# Framework events (React/Vue/Angular state sync) — same helper as slow path
+					await self._trigger_framework_events(object_id=object_id, cdp_session=cdp_session)
+					# One rAF tick (ceiling 100ms) instead of sleep(0.05): lets formatter/autocomplete
+					# JS run for the committed frame before we read the value back.
+					await self._raf_tick(cdp_session, timeout_ms=100)
+					readback_result = await cdp_session.cdp_client.send.Runtime.callFunctionOn(
+						params={
+							'objectId': object_id,
+							'functionDeclaration': 'function() { return this.value !== undefined ? this.value : this.textContent; }',
+							'returnByValue': True,
+						},
+						session_id=cdp_session.session_id,
+					)
+					actual_value = readback_result.get('result', {}).get('value')
+					if actual_value == text:
+						fast_input_done = True
+						if not is_sensitive:
+							if input_coordinates is None:
+								input_coordinates = {}
+							input_coordinates['actual_value'] = actual_value
+						self.logger.debug(f'⚡ fast_input OK ({len(text)} chars via Input.insertText)')
+					else:
+						# Mismatch (formatter/mask/controlled component rejected raw insert).
+						# Log for fallback_rate metric, clear, and use the slow per-char path.
+						shown = '<sensitive>' if is_sensitive else repr(actual_value)[:60]
+						self.logger.info(
+							f'perf.fallback: fast_input readback mismatch (got {shown}), falling back to per-char typing'
+						)
+						await self._clear_text_field(object_id=object_id, cdp_session=cdp_session)
+				except Exception as e:
+					self.logger.info(f'perf.fallback: fast_input failed ({type(e).__name__}: {e}), falling back to per-char typing')
+					try:
+						await self._clear_text_field(object_id=object_id, cdp_session=cdp_session)
+					except Exception:
+						pass
+
+			if fast_input_done:
+				# Readback already verified actual_value == text (exact match), so the
+				# Step 6 concatenation auto-retry can never trigger — safe to return now.
+				return input_coordinates
 
 			# Step 4: Type the text character by character using proper human-like key events
 			# This emulates exactly how a human would type, which modern websites expect

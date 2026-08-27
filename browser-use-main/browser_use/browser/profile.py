@@ -682,6 +682,49 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 
 	wait_between_actions: float = Field(default=0.1, description='Time to wait between actions.')
 
+	# --- Perf: event-driven waits instead of fixed sleeps (each opt-in, safe fallback preserved) ---
+	# P1: single Input.insertText instead of per-char keystrokes; readback-verified,
+	# auto-falls-back to the per-char path on any mismatch. Skipped automatically for
+	# contenteditable / masked / date-time inputs. Also honors env BROWSER_USE_FAST_INPUT=1.
+	fast_input: bool = Field(
+		default=False,
+		description='Fast text input via CDP Input.insertText with readback verification and automatic per-char fallback.',
+	)
+	# P2: after scrollIntoViewIfNeeded, wait for element rect to be stable across two
+	# rAF-separated reads (<1px delta) instead of a fixed 50ms sleep. Ceiling 300ms.
+	# MORE reliable than the fixed sleep for smooth-scroll pages. Env: BROWSER_USE_FAST_SCROLL=1.
+	fast_scroll_stability: bool = Field(
+		default=False,
+		description='Event-driven post-scroll stability wait (double rect measurement per rAF) instead of fixed 50ms sleep.',
+	)
+	# P3: trim fixed pauses inside the CDP mouse click sequence. Press duration stays
+	# configurable because some mousedown handlers need a non-zero press. Env: BROWSER_USE_FAST_CLICK=1.
+	fast_click: bool = Field(
+		default=False,
+		description='Remove fixed sleeps around mouseMoved/mouseReleased in the click path; press duration from click_press_duration_ms.',
+	)
+	click_press_duration_ms: int = Field(
+		default=20,
+		ge=0,
+		le=500,
+		description='Held-press duration between mousePressed and mouseReleased when fast_click is enabled (ms).',
+	)
+	# P4: replace the unconditional wait_between_actions sleep with a page-stability
+	# probe (readyState complete + no in-flight fetch/XHR + no DOM mutations in last rAF).
+	# Clean page -> proceed immediately; dirty -> poll 25ms up to wait_between_actions*5.
+	# Env: BROWSER_USE_FAST_BETWEEN_ACTIONS=1.
+	fast_between_actions: bool = Field(
+		default=False,
+		description='Event-driven stability detector between batched actions instead of unconditional wait_between_actions sleep.',
+	)
+	# P5: replace DOMWatchdog fixed 0.3s pre-snapshot sleep with a poll for pending
+	# network requests going idle (quiet period 100ms, ceiling wait_for_network_idle_page_load_time).
+	# Env: BROWSER_USE_FAST_NETWORK_IDLE=1.
+	fast_network_idle: bool = Field(
+		default=False,
+		description='Event-driven network-idle wait before DOM snapshot instead of fixed 0.3s sleep when requests are pending.',
+	)
+
 	# --- UI/viewport/DOM ---
 	highlight_elements: bool = Field(default=True, description='Highlight interactive elements on the page.')
 	dom_highlight_elements: bool = Field(
